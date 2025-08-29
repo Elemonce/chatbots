@@ -34,10 +34,13 @@ print("Access token (truncated):", token.token[:50] + "...")
 
 
 agent = project.agents.get_agent(os.getenv("AGENT_ID"))
-# agent = os.getenv("AGENT_ID")
 thread = project.agents.threads.create()
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/health")
+async def root():
+    return {"status": "ok"}
+
+@app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
 def home():
     return "<h1>AI-D Chatbot API is running! </h1><p>Use POST /chat to talk to the bot.</p>"
 
