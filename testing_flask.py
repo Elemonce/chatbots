@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from azure.ai.projects import AIProjectClient
 from azure.identity import DefaultAzureCredential
 from azure.ai.agents.models import ListSortOrder
+from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv
 import os
 
@@ -35,6 +36,15 @@ print("Access token (truncated):", token.token[:50] + "...")
 agent = project.agents.get_agent(os.getenv("AGENT_ID"))
 # agent = os.getenv("AGENT_ID")
 thread = project.agents.threads.create()
+
+@app.get("/", response_class=HTMLResponse)
+def home():
+    return "<h1>AI-D Chatbot API is running! </h1><p>Use POST /chat to talk to the bot.</p>"
+
+@app.get("/chat", response_class=HTMLResponse)
+def home():
+    return "<h1>AI-D Chatbot API is running! </h1><p>Use POST /chat to talk to the bot.</p>"
+
 
 @app.post("/chat")
 async def chat(request: Request):
