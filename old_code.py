@@ -35,7 +35,7 @@ project = AIProjectClient(
 
 
 agent = project.agents.get_agent(os.getenv("AGENT_ID"))
-# thread = project.agents.threads.create()
+thread = project.agents.threads.create()
 
 @app.get("/health")
 async def root():
@@ -49,26 +49,20 @@ def home():
 def home():
     return "<h1>AI-D Chatbot API is running! </h1><p>Use POST /chat to talk to the bot.</p>"
 
-@app.post("/start")
-def give_thread_id():
-    thread = project.agents.threads.create()
-    return {"thread_id": thread.id}
-
 
 @app.post("/chat")
 async def chat(request: Request):
     data = await request.json()
     user_input = data["message"]
-    user_thread_id = data["thread_id"]
 
     message = project.agents.messages.create(
-        thread_id=user_thread_id,
+        thread_id=thread.id,
         role="user",
         content=user_input
     )
 
     run = project.agents.runs.create_and_process(
-        thread_id=user_thread_id,
+        thread_id=thread.id,
         agent_id=agent.id
     )
 
@@ -77,7 +71,7 @@ async def chat(request: Request):
 
     # messages = project.agents.messages.list(
     messages = list(project.agents.messages.list(
-        thread_id=user_thread_id,
+        thread_id=thread.id,
         order=ListSortOrder.ASCENDING
     ))
 
@@ -91,7 +85,7 @@ async def chat(request: Request):
 
 # individual history
 # storing the messages
-# supabase (to store the messages maybe) WXyT79wgf9s4R6w3
+# supabase (to store the messages maybe)
 # layout fix (logo etc)
 
 

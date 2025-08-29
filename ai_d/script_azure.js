@@ -365,11 +365,41 @@
     const sendButton = chatContainer.querySelector('button[type="submit"]');
 
 
+    let thread_id = null;
 
-    async function startNewConversation() {
+    async function checkIfDialogueWasStarted() {
+        if (sessionStorage.getItem("session_id")) {
+            console.log(sessionStorage.getItem("session_id"));
             chatContainer.querySelector('.brand-header').style.display = 'none';
             chatContainer.querySelector('.new-conversation').style.display = 'none';
             chatInterface.classList.add('active');
+        }
+    }
+
+    async function startNewConversation() {
+        if (!sessionStorage.getItem("session_id")) {
+            sessionStorage.setItem("session_id", crypto.randomUUID());
+        }
+        const sessionId = sessionStorage.getItem("session_id");
+
+        console.log(sessionId);
+
+
+        // const response = await fetch("https://ai-d-chatbot.onrender.com/start", {
+        const response = await fetch("http://127.0.0.1:8000/start", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({})
+        });
+
+        const data = await response.json();
+        
+        thread_id = data.thread_id;
+        sessionStorage.setItem("thread_id", thread_id);
+
+        chatContainer.querySelector('.brand-header').style.display = 'none';
+        chatContainer.querySelector('.new-conversation').style.display = 'none';
+        chatInterface.classList.add('active');
     }
 
     async function sendMessage(userMessage) {
@@ -379,12 +409,12 @@
         messagesContainer.appendChild(userMessageDiv);
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
 
-        // const response = await fetch("http://127.0.0.1:8000/chat", {
+        const response = await fetch("http://127.0.0.1:8000/chat", {
         // const response = await fetch("/chat", {
-        const response = await fetch("https://ai-d-chatbot.onrender.com/chat", {
+        // const response = await fetch("https://ai-d-chatbot.onrender.com/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({message: userMessage})
+            body: JSON.stringify({message: userMessage, thread_id: sessionStorage.getItem("thread_id")})
         });
 
         const data = await response.json();
@@ -423,7 +453,8 @@
     });
 
     toggleButton.addEventListener('click', () => {
-    chatContainer.classList.toggle('open');
+        chatContainer.classList.toggle('open');
+        checkIfDialogueWasStarted();
     });
 
 
