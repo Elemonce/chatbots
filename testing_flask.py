@@ -6,7 +6,6 @@ from azure.ai.agents.models import ListSortOrder
 from dotenv import load_dotenv
 import os
 
-
 load_dotenv()
 
 
@@ -21,10 +20,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+credential=DefaultAzureCredential()
+
 project = AIProjectClient(
-    credential=DefaultAzureCredential(),
+    credential=credential,
     endpoint=os.getenv("AI_D_PROJECT_ENDPOINT")
 )
+
+token = credential.get_token("https://management.azure.com/.default")
+print("Token acquired from:", credential.__class__.__name__)
+print("Access token (truncated):", token.token[:50] + "...")
+
 
 agent = project.agents.get_agent(os.getenv("AGENT_ID"))
 # agent = os.getenv("AGENT_ID")
