@@ -6,8 +6,13 @@ from azure.ai.agents.models import ListSortOrder
 from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv
 import os
+from supabase import create_client, Client
 
 load_dotenv()
+
+url: str = os.environ.get("SUPABASE_URL")
+key: str = os.environ.get("SUPABASE_KEY")
+supabase: Client = create_client(url, key)
 
 
 app = FastAPI()
@@ -75,7 +80,13 @@ def give_thread_id():
     ))
 
     for message in reversed(messages):
-        if message.role == "assistant" and message.text_messages:        
+        if message.role == "assistant" and message.text_messages:
+            response = (
+                supabase.table("chatbot_data")
+                .insert({"role": "assistant", "message": message.text_messages[-1].text.value, "thread_id": thread.id})
+                .execute()
+            )
+            print(response)        
             return {"role": "assistant", "message": message.text_messages[-1].text.value, "thread_id": thread.id}
 
     return {"role": "assistant", "message": "No response", "thread_id": thread.id}
@@ -90,6 +101,12 @@ async def chat(request: Request):
         thread_id=user_thread_id,
         role="user",
         content=user_input
+    )
+
+    response_user = (
+        supabase.table("chatbot_data")
+        .insert({"role": "user", "message": user_input, "thread_id": user_thread_id})
+        .execute()
     )
 
     run = project.agents.runs.create_and_process(
@@ -110,10 +127,19 @@ async def chat(request: Request):
     for message in reversed(messages):
         if message.role == "assistant" and message.text_messages:
             # [-1] here to get the last fragment in case one assistant message contains multiple text fragments
+            response_assistant = (
+                supabase.table("chatbot_data")
+                .insert({"role": "assistant", "message": message.text_messages[-1].text.value, "thread_id": user_thread_id})
+                .execute()
+            )
+            print(response_assistant)        
+
             return {"role": "assistant", "message": message.text_messages[-1].text.value}
 
     return {"role": "assistant", "message": "No response"}
 
+
+# email, phone, name, summary (chatgpt)
 
 # individual history
 # storing the messages
