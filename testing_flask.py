@@ -74,10 +74,9 @@ def give_thread_id():
     order=ListSortOrder.ASCENDING
     ))
 
-    message = messages[0]
-        
-    if message.text_messages:
-        return {"role": "assistant", "message": message.text_messages[-1].text.value, "thread_id": thread.id}
+    for message in reversed(messages):
+        if message.role == "assistant" and message.text_messages:        
+            return {"role": "assistant", "message": message.text_messages[-1].text.value, "thread_id": thread.id}
 
     return {"role": "assistant", "message": "No response", "thread_id": thread.id}
 
