@@ -168,11 +168,14 @@ def give_thread_id():
 
 @app.post("/chat")
 async def chat(request: Request):
-    save_finished_threads()
-
     data = await request.json()
     user_input = data["message"]
     user_thread_id = data["thread_id"]
+    ONGOING_THREADS[user_thread_id] = time.time() 
+
+    save_finished_threads()
+
+
 
     message = project.agents.messages.create(
         thread_id=user_thread_id,
