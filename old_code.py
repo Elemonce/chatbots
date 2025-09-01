@@ -6,8 +6,14 @@ from azure.ai.agents.models import ListSortOrder
 from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv
 import os
+import time
+from supabase import create_client, Client
 
 load_dotenv()
+
+url: str = os.environ.get("SUPABASE_URL")
+key: str = os.environ.get("SUPABASE_KEY")
+supabase: Client = create_client(url, key)
 
 
 app = FastAPI()
@@ -28,14 +34,97 @@ project = AIProjectClient(
     endpoint=os.getenv("AI_D_PROJECT_ENDPOINT")
 )
 
-# For testing purposes
-# token = credential.get_token("https://management.azure.com/.default")
-# print("Token acquired from:", credential.__class__.__name__)
-# print("Access token (truncated):", token.token[:50] + "...")
 
 
-agent = project.agents.get_agent(os.getenv("AGENT_ID"))
-thread = project.agents.threads.create()
+agent_data = project.agents.get_agent(os.getenv("AGENT_DATA_ID"))
+agent_summary = project.agents.get_agent(os.getenv("AGENT_SUMMARY_ID"))
+agent_summary_thread = project.agents.threads.create()
+
+
+# Store the last message's time for each thread.
+ONGOING_THREADS = {}
+# Last time the ongoing threads have been checked. (Used to not check it very often but after a specific time.)
+last_time_checked = time.time()
+
+# Time limit (in seconds). Used for both threads and for a user's last message.
+time_limit = 15
+
+def save_finished_threads():
+    # Limited to 3 conversations to not take up too much time processing it
+    # conversations = (
+    #     supabase.table("chatbot_data")
+    #     .select("*")
+    #     .eq("ended", False)
+    #     .limit(3)
+    #     .execute()
+    # )
+
+    global last_time_checked
+
+    time_now = time.time()
+
+    # Limit the number of threads to check so that it doesn't take up a lot of time
+    threads_to_check = 3
+    
+    # making a list so that the changes are not made during the iteration
+    threads_to_remove = []
+    if time_now - last_time_checked > time_limit:
+        last_time_checked = time_now
+        for thread_id, last_message_time in ONGOING_THREADS.items():
+            if threads_to_check == 0:
+                break
+            
+            if time_now - last_message_time > time_limit:
+                threads_to_remove.append(thread_id)
+
+                # Get a conversation in JSON format
+                conversations = (
+                    supabase.table("chatbot_data")
+                    .select("role, message")
+                    .eq("thread_id", thread_id)
+                    .execute()
+                    ).data
+                
+                for conversation in conversations:
+                    print(conversation)
+
+                conversations_str = "".join(f"{conv['role']}: {conv['message']}" for conv in conversations)
+                print(conversations_str)
+                
+                # Make a message with conversation as value
+                message = project.agents.messages.create(
+                    thread_id=thread_id,
+                    role="user",
+                    content=conversations_str
+                )
+
+                # Pass the message onto summary agent
+                run = project.agents.runs.create_and_process(
+                    thread_id=agent_summary_thread.id,
+                    agent_id=agent_summary.id
+                )
+
+                if run.status == "failed":
+                    return {"role": "assistant", "message": f"Run failed: {run.last_error}"}
+                
+                messages = list(project.agents.messages.list(
+                    thread_id=agent_summary_thread.id,
+                    order=ListSortOrder.ASCENDING
+                    ))
+
+                for message in reversed(messages):
+                    if message.role == "assistant" and message.text_messages:
+                        print(message.text_messages[-1].text.value)
+                        response = (
+                            supabase.table("chatbot_summary_data")
+                            .insert(message.text_messages[-1].text.value)
+                            .execute()
+                        )   
+
+            threads_to_check -=1  
+        for thread_id in threads_to_remove:
+            ONGOING_THREADS.pop(thread_id, None)
+
 
 @app.get("/health")
 async def root():
@@ -49,45 +138,111 @@ def home():
 def home():
     return "<h1>AI-D Chatbot API is running! </h1><p>Use POST /chat to talk to the bot.</p>"
 
+@app.post("/start")
+def give_thread_id():
+    # Creating a thread for a new user
+    thread = project.agents.threads.create()
 
-@app.post("/chat")
-async def chat(request: Request):
-    data = await request.json()
-    user_input = data["message"]
+    ONGOING_THREADS[thread.id] = time.time() 
 
+    # Initial message to get initial response from the chatbot
     message = project.agents.messages.create(
         thread_id=thread.id,
         role="user",
-        content=user_input
+        content="Hallo"
     )
 
     run = project.agents.runs.create_and_process(
         thread_id=thread.id,
-        agent_id=agent.id
+        agent_id=agent_data.id
+    )
+
+    if run.status == "failed":
+        return {"role": "assistant", "message": f"Run failed: {run.last_error}"}
+    
+    messages = list(project.agents.messages.list(
+    thread_id=thread.id,
+    order=ListSortOrder.ASCENDING
+    ))
+
+    for message in reversed(messages):
+        if message.role == "assistant" and message.text_messages:
+            response = (
+                supabase.table("chatbot_data")
+                .insert({"role": "assistant", "message": message.text_messages[-1].text.value, "thread_id": thread.id})
+                .execute()
+            )     
+            return {"role": "assistant", "message": message.text_messages[-1].text.value, "thread_id": thread.id}
+
+    return {"role": "assistant", "message": "No response", "thread_id": thread.id}
+
+@app.post("/chat")
+async def chat(request: Request):
+    save_finished_threads()
+
+    data = await request.json()
+    user_input = data["message"]
+    user_thread_id = data["thread_id"]
+
+    message = project.agents.messages.create(
+        thread_id=user_thread_id,
+        role="user",
+        content=user_input
+    )
+
+    response_user = (
+        supabase.table("chatbot_data")
+        .insert({"role": "user", "message": user_input, "thread_id": user_thread_id})
+        .execute()
+    )
+
+    run = project.agents.runs.create_and_process(
+        thread_id=user_thread_id,
+        agent_id=agent_data.id
     )
 
     if run.status == "failed":
         return {"role": "assistant", "message": f"Run failed: {run.last_error}"}
 
-    # messages = project.agents.messages.list(
+    # Getting a list of messages
     messages = list(project.agents.messages.list(
-        thread_id=thread.id,
+        thread_id=user_thread_id,
         order=ListSortOrder.ASCENDING
     ))
 
-    # last assistant message
+    # Last assistant message
     for message in reversed(messages):
         if message.role == "assistant" and message.text_messages:
+            # [-1] here to get the last fragment in case one assistant message contains multiple text fragments
+            response_assistant = (
+                supabase.table("chatbot_data")
+                .insert({"role": "assistant", "message": message.text_messages[-1].text.value, "thread_id": user_thread_id})
+                .execute()
+            )
+
             return {"role": "assistant", "message": message.text_messages[-1].text.value}
 
     return {"role": "assistant", "message": "No response"}
 
-
-# individual history
-# storing the messages
-# supabase (to store the messages maybe)
-# layout fix (logo etc)
+# idea for summary:
+    # ask AI as a last prompt to summarize their conversation (need to add a bit of prompt for it on Azure then)
 
 
-# further steps
-# cal.com api to make a meeting 
+# Problems for now
+# 1. How to end a conversation
+    # Make a timer or check for a specific ending of a message ("Tot ziens!")?
+# 2. Extract data (ask AI to send it in a JSON format, which I'll then need to send to supabase)
+# 2.1. Make a summary of the dialogue and also send it
+# email, phone, name, summary (chatgpt)
+
+# Done but need to make sure it works
+# 1. Individual history
+
+
+# Further steps
+# 1. cal.com api to make a meeting 
+# 2. layout fix (logo etc)
+
+# WXyT79wgf9s4R6w3
+
+# Uv
