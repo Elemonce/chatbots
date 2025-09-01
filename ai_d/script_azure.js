@@ -383,8 +383,8 @@
         const sessionId = sessionStorage.getItem("session_id");
     
         // Starting a conversation
-        // const response = await fetch("https://ai-d-chatbot.onrender.com/start", {
-        const response = await fetch("http://127.0.0.1:8000/start", {
+        const response = await fetch("https://ai-d-chatbot.onrender.com/start", {
+        // const response = await fetch("http://127.0.0.1:8000/start", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({})
@@ -413,9 +413,9 @@
         messagesContainer.appendChild(userMessageDiv);
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
 
-        const response = await fetch("http://127.0.0.1:8000/chat", {
+        // const response = await fetch("http://127.0.0.1:8000/chat", {
         // const response = await fetch("/chat", {
-        // const response = await fetch("https://ai-d-chatbot.onrender.com/chat", {
+        const response = await fetch("https://ai-d-chatbot.onrender.com/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({message: userMessage, thread_id: sessionStorage.getItem("thread_id")})

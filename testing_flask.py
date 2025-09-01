@@ -48,7 +48,7 @@ ONGOING_THREADS = {}
 last_time_checked = time.time()
 
 # Time limit (in seconds). Used for both threads and for a user's last message.
-time_limit = 60
+time_limit = 120
 
 def save_finished_threads():
     global last_time_checked
@@ -58,62 +58,64 @@ def save_finished_threads():
     # making a list so that the changes are not made during the iteration
     threads_to_remove = []
 
-    last_time_checked = time_now
-    for thread_id, last_message_time in ONGOING_THREADS.items():
-        if threads_to_check == 0:
-            break
-        
-        if time_now - last_message_time > time_limit:
-            threads_to_remove.append(thread_id)
-
-            # Get a conversation in JSON format
-            conversations = (
-                supabase.table("chatbot_data")
-                .select("role, message")
-                .eq("thread_id", thread_id)
-                .execute()
-                ).data
+    if time_now - last_time_checked > time_limit:
+        last_time_checked = time_now
+        for thread_id, last_message_time in ONGOING_THREADS.items():
+            if threads_to_check == 0:
+                break
             
-            for conversation in conversations:
-                print(conversation)
+            if time_now - last_message_time > time_limit:
+                threads_to_remove.append(thread_id)
 
-            conversations_str = "conversations_str value: ".join(f"{conv['role']}: {conv['message']}" for conv in conversations)
-            print(conversations_str)
-            
-            # Make a message with conversation as value
-            message = project.agents.messages.create(
-                thread_id=agent_summary_thread.id,
-                role="user",
-                content=conversations_str
-            )
+                # Get a conversation in JSON format
+                conversations = (
+                    supabase.table("chatbot_data")
+                    .select("role, message")
+                    .eq("thread_id", thread_id)
+                    .execute()
+                    ).data
+                
+                for conversation in conversations:
+                    print(conversation)
 
-            # Pass the message onto summary agent
-            run = project.agents.runs.create_and_process(
-                thread_id=agent_summary_thread.id,
-                agent_id=agent_summary.id
-            )
+                conversations_str = "conversations_str value: ".join(f"{conv['role']}: {conv['message']}" for conv in conversations)
+                print(conversations_str)
+                
+                # Make a message with conversation as value
+                message = project.agents.messages.create(
+                    thread_id=agent_summary_thread.id,
+                    role="user",
+                    content=conversations_str
+                )
 
-            if run.status == "failed":
-                return {"role": "assistant", "message": f"Run failed: {run.last_error}"}
-            
-            messages = list(project.agents.messages.list(
-                thread_id=agent_summary_thread.id,
-                order=ListSortOrder.ASCENDING
-                ))
+                # Pass the message onto summary agent
+                run = project.agents.runs.create_and_process(
+                    thread_id=agent_summary_thread.id,
+                    agent_id=agent_summary.id
+                )
 
-            for message in reversed(messages):
-                if message.role == "assistant" and message.text_messages:
-                    # At this point, message value is an str that needs to be converted into JSON
-                    message_json = json.loads(message.text_messages[-1].text.value)
-                    response = (
-                        supabase.table("chatbot_summary_data")
-                        .insert(message_json)
-                        .execute()
-                    )   
+                if run.status == "failed":
+                    return {"role": "assistant", "message": f"Run failed: {run.last_error}"}
+                
+                messages = list(project.agents.messages.list(
+                    thread_id=agent_summary_thread.id,
+                    order=ListSortOrder.ASCENDING
+                    ))
+
+                for message in reversed(messages):
+                    if message.role == "assistant" and message.text_messages:
+                        # At this point, message value is an str that needs to be converted into JSON
+                        message_json = json.loads(message.text_messages[-1].text.value)
+                        response = (
+                            supabase.table("chatbot_summary_data")
+                            .insert(message_json)
+                            .execute()
+                        )
+                        break
 
 
-    for thread_id in threads_to_remove:
-        ONGOING_THREADS.pop(thread_id, None)
+        for thread_id in threads_to_remove:
+            ONGOING_THREADS.pop(thread_id, None)
 
 
 @app.get("/health")
