@@ -369,7 +369,6 @@
 
     async function checkIfDialogueWasStarted() {
         if (sessionStorage.getItem("session_id")) {
-            console.log(sessionStorage.getItem("session_id"));
             chatContainer.querySelector('.brand-header').style.display = 'none';
             chatContainer.querySelector('.new-conversation').style.display = 'none';
             chatInterface.classList.add('active');
@@ -377,16 +376,15 @@
     }
 
     async function startNewConversation() {
+        // Creating a new session ID for a user if not created already
         if (!sessionStorage.getItem("session_id")) {
             sessionStorage.setItem("session_id", crypto.randomUUID());
         }
         const sessionId = sessionStorage.getItem("session_id");
-
-        console.log(sessionId);
-
-
-        // const response = await fetch("https://ai-d-chatbot.onrender.com/start", {
-        const response = await fetch("http://127.0.0.1:8000/start", {
+    
+        // Starting a conversation
+        const response = await fetch("https://ai-d-chatbot.onrender.com/start", {
+        // const response = await fetch("http://127.0.0.1:8000/start", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({})
@@ -400,6 +398,12 @@
         chatContainer.querySelector('.brand-header').style.display = 'none';
         chatContainer.querySelector('.new-conversation').style.display = 'none';
         chatInterface.classList.add('active');
+
+        const botMessageDiv = document.createElement('div');
+        botMessageDiv.className = 'chat-message bot';
+        botMessageDiv.textContent = data.message;
+        messagesContainer.appendChild(botMessageDiv);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
     }
 
     async function sendMessage(userMessage) {
@@ -409,9 +413,9 @@
         messagesContainer.appendChild(userMessageDiv);
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
 
-        const response = await fetch("http://127.0.0.1:8000/chat", {
+        // const response = await fetch("http://127.0.0.1:8000/chat", {
         // const response = await fetch("/chat", {
-        // const response = await fetch("https://ai-d-chatbot.onrender.com/chat", {
+        const response = await fetch("https://ai-d-chatbot.onrender.com/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({message: userMessage, thread_id: sessionStorage.getItem("thread_id")})
