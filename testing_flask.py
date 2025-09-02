@@ -53,6 +53,48 @@ update_rate = 30
 # How much time a user has to respond before the chat is archived (in seconds)
 time_limit_user_message = 30
 
+def insert_chatbot_message(thread_id, table_name, json_msg=False):
+    """Function that gets a chatbot message and
+    inserts it into supabase database / displays it in the widget for the user.
+    
+    Args:
+        thread_id: thread id of the conversation in question
+        table_name: supabase table to where the data is going to be sent
+        json_msg: if set to True, the format of message is going to be sent in JSON
+
+    Returns:
+        Dict: A dictionary consisting of the role (assistant/chatbot in this case), the message, and the thread id.
+    """
+
+    messages = list(project.agents.messages.list(
+        thread_id=thread_id,
+        order=ListSortOrder.ASCENDING
+        ))
+    
+    for message in reversed(messages):
+        if message.role == "assistant" and message.text_messages:
+            message_to_insert = message.text_messages[-1].text.value
+            if json_msg:
+                message_to_insert = json.loads(message_to_insert)
+                response = (
+                    supabase.table(table_name)
+                    .insert(message_to_insert)
+                    .execute()
+                )
+                return None
+            else:
+                response = (
+                    supabase.table(table_name)
+                    .insert({"role": "assistant", "message": message_to_insert, "thread_id": thread_id})
+                    .execute()
+                )
+                return {"role": "assistant", "message": message_to_insert, "thread_id": thread_id}
+    
+    return {"role": "assistant", "message": "No response", "thread_id": thread_id}
+
+
+
+
 def save_finished_threads():
     global last_time_checked
     time_now = time.time()
@@ -78,8 +120,11 @@ def save_finished_threads():
                     .execute()
                     ).data
                 
-                conversations_str = "conversations_str value: ".join(f"{conv['role']}: {conv['message']}" for conv in conversations)
                 
+                # conversations_str = "conversations_str value: ".join(f"{conv['role']}: {conv['message']}" for conv in conversations)
+                conversations_str = "".join(f"{conv['role']}: {conv['message']}" for conv in conversations)
+                
+
                 # Make a message with conversation as value (summary agent)
                 message = project.agents.messages.create(
                     thread_id=agent_summary_thread.id,
@@ -93,21 +138,7 @@ def save_finished_threads():
                     agent_id=agent_summary.id
                 )
 
-                messages = list(project.agents.messages.list(
-                    thread_id=agent_summary_thread.id,
-                    order=ListSortOrder.ASCENDING
-                    ))
-
-                for message in reversed(messages):
-                    if message.role == "assistant" and message.text_messages:
-                        # At this point, message value is an str that needs to be converted into JSON
-                        message_json = json.loads(message.text_messages[-1].text.value)
-                        response = (
-                            supabase.table("chatbot_summary_data")
-                            .insert(message_json)
-                            .execute()
-                        )
-                        break
+                insert_chatbot_message(agent_summary_thread.id, "chatbot_summary_data", True)
 
         threads_to_check -= 1
         for thread_id in threads_to_remove:
@@ -155,21 +186,7 @@ async def give_thread_id(request: Request):
     if run.status == "failed":
         return {"role": "assistant", "message": f"Run failed: {run.last_error}"}
     
-    messages = list(project.agents.messages.list(
-    thread_id=thread.id,
-    order=ListSortOrder.ASCENDING
-    ))
-
-    for message in reversed(messages):
-        if message.role == "assistant" and message.text_messages:
-            response = (
-                supabase.table("chatbot_data")
-                .insert({"role": "assistant", "message": message.text_messages[-1].text.value, "thread_id": thread.id})
-                .execute()
-            )     
-            return {"role": "assistant", "message": message.text_messages[-1].text.value, "thread_id": thread.id}
-
-    return {"role": "assistant", "message": "No response", "thread_id": thread.id}
+    return insert_chatbot_message(thread.id, "chatbot_data")
 
 @app.post("/chat")
 async def chat(request: Request):
@@ -177,10 +194,6 @@ async def chat(request: Request):
     user_input = data["message"]
     user_thread_id = data["thread_id"]
     ONGOING_THREADS[user_thread_id] = time.time() 
-
-    save_finished_threads()
-
-
 
     message = project.agents.messages.create(
         thread_id=user_thread_id,
@@ -199,36 +212,16 @@ async def chat(request: Request):
         agent_id=agent_data.id
     )
 
+    save_finished_threads()
+
     if run.status == "failed":
         return {"role": "assistant", "message": f"Run failed: {run.last_error}"}
-
-    # Getting a list of messages
-    messages = list(project.agents.messages.list(
-        thread_id=user_thread_id,
-        order=ListSortOrder.ASCENDING
-    ))
-
-    # Last assistant message
-    for message in reversed(messages):
-        if message.role == "assistant" and message.text_messages:
-            # [-1] here to get the last fragment in case one assistant message contains multiple text fragments
-            response_assistant = (
-                supabase.table("chatbot_data")
-                .insert({"role": "assistant", "message": message.text_messages[-1].text.value, "thread_id": user_thread_id})
-                .execute()
-            )
-
-            return {"role": "assistant", "message": message.text_messages[-1].text.value}
-
-    return {"role": "assistant", "message": "No response"}
-
+      
+    return insert_chatbot_message(user_thread_id, "chatbot_data")
 
 # Problems for now
 # 1. How to end a conversation
     # Make a timer or check for a specific ending of a message ("Tot ziens!")?
-# 2. Extract data (ask AI to send it in a JSON format, which I'll then need to send to supabase)
-# 2.1. Make a summary of the dialogue and also send it
-# email, phone, name, summary (chatgpt)
 
 # Done but need to make sure it works
 # 1. Individual history
@@ -240,8 +233,10 @@ async def chat(request: Request):
 
 # WXyT79wgf9s4R6w3
 
-# 
+# things to point out
 
+# 1. When the user sends their last message, the conversation doesn't end until time runs out.
+# 2. auto-reply message (could do it in both languages)
 
 
 
