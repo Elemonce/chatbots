@@ -47,24 +47,27 @@ ONGOING_THREADS = {}
 # Last time the ongoing threads have been checked. (Used to not check it very often but after a specific time.)
 last_time_checked = time.time()
 
-# Time limit (in seconds). Used for both threads and for a user's last message.
-time_limit = 120
+# How often the threads are checked for being finished (in seconds)
+update_rate = 30
+
+# How much time a user has to respond before the chat is archived (in seconds)
+time_limit_user_message = 30
 
 def save_finished_threads():
     global last_time_checked
     time_now = time.time()
     # Limit the number of threads to check so that it doesn't take up a lot of time
-    threads_to_check = 3
+    threads_to_check = 4
     # making a list so that the changes are not made during the iteration
     threads_to_remove = []
 
-    if time_now - last_time_checked > time_limit:
+    if time_now - last_time_checked > update_rate:
         last_time_checked = time_now
         for thread_id, last_message_time in ONGOING_THREADS.items():
             if threads_to_check == 0:
                 break
             
-            if time_now - last_message_time > time_limit:
+            if time_now - last_message_time > time_limit_user_message:
                 threads_to_remove.append(thread_id)
 
                 # Get a conversation in JSON format
@@ -75,13 +78,9 @@ def save_finished_threads():
                     .execute()
                     ).data
                 
-                for conversation in conversations:
-                    print(conversation)
-
                 conversations_str = "conversations_str value: ".join(f"{conv['role']}: {conv['message']}" for conv in conversations)
-                print(conversations_str)
                 
-                # Make a message with conversation as value
+                # Make a message with conversation as value (summary agent)
                 message = project.agents.messages.create(
                     thread_id=agent_summary_thread.id,
                     role="user",
@@ -94,9 +93,6 @@ def save_finished_threads():
                     agent_id=agent_summary.id
                 )
 
-                if run.status == "failed":
-                    return {"role": "assistant", "message": f"Run failed: {run.last_error}"}
-                
                 messages = list(project.agents.messages.list(
                     thread_id=agent_summary_thread.id,
                     order=ListSortOrder.ASCENDING
@@ -113,7 +109,7 @@ def save_finished_threads():
                         )
                         break
 
-
+        threads_to_check -= 1
         for thread_id in threads_to_remove:
             ONGOING_THREADS.pop(thread_id, None)
 
@@ -131,7 +127,14 @@ def home():
     return "<h1>AI-D Chatbot API is running! </h1><p>Use POST /chat to talk to the bot.</p>"
 
 @app.post("/start")
-def give_thread_id():
+async def give_thread_id(request: Request):
+    data = await request.json()
+    user_input = data["message"]
+    # In case it's an initial message when the user clicks on start a conversation
+    # (In the other case, it means that the user ran out of time and starts a new conversation but with the chat already opened)
+    if user_input == None:
+        user_input = "Hallo"
+
     # Creating a thread for a new user
     thread = project.agents.threads.create()
 
@@ -141,7 +144,7 @@ def give_thread_id():
     message = project.agents.messages.create(
         thread_id=thread.id,
         role="user",
-        content="Hallo"
+        content=user_input
     )
 
     run = project.agents.runs.create_and_process(
@@ -219,9 +222,6 @@ async def chat(request: Request):
 
     return {"role": "assistant", "message": "No response"}
 
-# idea for summary:
-    # ask AI as a last prompt to summarize their conversation (need to add a bit of prompt for it on Azure then)
-
 
 # Problems for now
 # 1. How to end a conversation
@@ -240,4 +240,8 @@ async def chat(request: Request):
 
 # WXyT79wgf9s4R6w3
 
-# Uv
+# 
+
+
+
+

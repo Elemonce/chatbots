@@ -367,27 +367,63 @@
 
     let thread_id = null;
 
-    async function checkIfDialogueWasStarted() {
-        if (sessionStorage.getItem("session_id")) {
-            chatContainer.querySelector('.brand-header').style.display = 'none';
-            chatContainer.querySelector('.new-conversation').style.display = 'none';
-            chatInterface.classList.add('active');
+    // Used to check whether a conversation ran for too much time without a user's input.
+    let userIsLate = false;
+
+    // Used to reset the timeout if the user sends a message before the time has run out
+    let timeoutId;
+
+    let userConversationMessage;
+
+    // async function checkIfDialogueWasStarted() {
+    //     if (sessionStorage.getItem("session_id")) {
+    //         chatContainer.querySelector('.brand-header').style.display = 'none';
+    //         chatContainer.querySelector('.new-conversation').style.display = 'none';
+    //         chatInterface.classList.add('active');
+    //     }
+    // }
+
+    function startTimeout() {
+        if (timeoutId) {
+            clearTimeout(timeoutId);
         }
+
+        timeoutId = setTimeout(() => {
+        const botMessageDiv = document.createElement('div');
+        botMessageDiv.className = 'chat-message bot';
+        botMessageDiv.textContent = "Het spijt ons, maar het tijd van het gesprek is voorbij. " +
+                                    "U kunt ons nogmaals contacteren als u een vraag hebt.";
+        messagesContainer.appendChild(botMessageDiv);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        userIsLate = true;
+    }, 30000);
     }
 
-    async function startNewConversation() {
-        // Creating a new session ID for a user if not created already
-        if (!sessionStorage.getItem("session_id")) {
-            sessionStorage.setItem("session_id", crypto.randomUUID());
+    function createBotMessage(data) {
+        const botMessageDiv = document.createElement('div');
+        botMessageDiv.className = 'chat-message bot';
+        botMessageDiv.textContent = data.message;
+        messagesContainer.appendChild(botMessageDiv);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+
+
+    async function startNewConversation(userMessage) {   
+        startTimeout(); 
+        // userMessage is not null in case the user is starting a conversation anew
+        // (when the time of the previous one ran out)
+        if (userMessage) {
+            const userMessageDiv = document.createElement('div');
+            userMessageDiv.className = 'chat-message user';
+            userMessageDiv.textContent = userMessage;
+            messagesContainer.appendChild(userMessageDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
         }
-        const sessionId = sessionStorage.getItem("session_id");
-    
-        // Starting a conversation
-        const response = await fetch("https://ai-d-chatbot.onrender.com/start", {
-        // const response = await fetch("http://127.0.0.1:8000/start", {
+        // const response = await fetch("https://ai-d-chatbot.onrender.com/start", {
+        const response = await fetch("http://127.0.0.1:8000/start", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({})
+            body: JSON.stringify({message: userMessage})
         });
 
         const data = await response.json();
@@ -399,23 +435,20 @@
         chatContainer.querySelector('.new-conversation').style.display = 'none';
         chatInterface.classList.add('active');
 
-        const botMessageDiv = document.createElement('div');
-        botMessageDiv.className = 'chat-message bot';
-        botMessageDiv.textContent = data.message;
-        messagesContainer.appendChild(botMessageDiv);
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        createBotMessage(data);
     }
 
     async function sendMessage(userMessage) {
+        startTimeout();
         const userMessageDiv = document.createElement('div');
         userMessageDiv.className = 'chat-message user';
         userMessageDiv.textContent = userMessage;
         messagesContainer.appendChild(userMessageDiv);
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
 
-        // const response = await fetch("http://127.0.0.1:8000/chat", {
+        const response = await fetch("http://127.0.0.1:8000/chat", {
         // const response = await fetch("/chat", {
-        const response = await fetch("https://ai-d-chatbot.onrender.com/chat", {
+        // const response = await fetch("https://ai-d-chatbot.onrender.com/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({message: userMessage, thread_id: sessionStorage.getItem("thread_id")})
@@ -423,42 +456,41 @@
 
         const data = await response.json();
 
-
-            
-        const botMessageDiv = document.createElement('div');
-        botMessageDiv.className = 'chat-message bot';
-        botMessageDiv.textContent = data.message;
-        messagesContainer.appendChild(botMessageDiv);
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        createBotMessage(data);
     }
 
 
-    newChatBtn.addEventListener('click', startNewConversation);
+    newChatBtn.addEventListener('click', () => {
+       startNewConversation(null)     
+    } );
 
-
+    function continueConversation() {
+        userConversationMessage = textarea.value.trim();
+        if (userConversationMessage) {
+            if (userIsLate) {
+                startNewConversation(userConversationMessage);
+            } else {
+                sendMessage(userConversationMessage);
+            }
+            userIsLate = false;
+            textarea.value = '';
+        } 
+    }
 
     textarea.addEventListener('keypress', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
-            const message = textarea.value.trim();
-            if (message) {
-                sendMessage(message);
-                textarea.value = '';
-            }
+            continueConversation();
         }
     });
 
     sendButton.addEventListener('click', () => {
-    const message = textarea.value.trim();
-    if (message) {
-        sendMessage(message);
-        textarea.value = '';
-    }
+        continueConversation();
     });
 
     toggleButton.addEventListener('click', () => {
         chatContainer.classList.toggle('open');
-        checkIfDialogueWasStarted();
+        // checkIfDialogueWasStarted();
     });
 
 
